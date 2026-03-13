@@ -1,0 +1,71 @@
+name: Generate Login QR Code
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-qr:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Install dependencies
+        run: |
+          go mod download
+      
+      - name: Install Xvfb and screenshot tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb scrot
+      
+      - name: Build login tool
+        run: |
+          go build -o xiaohongshu-login ./cmd/login
+      
+      - name: Generate QR Code with Xvfb
+        run: |
+          # Start Xvfb
+          Xvfb :99 -screen 0 1024x768x24 &
+          export DISPLAY=:99
+          
+          # Run login tool in background
+          timeout 30 ./xiaohongshu-login &
+          LOGIN_PID=$!
+          
+          # Wait for browser to open and QR to display
+          sleep 15
+          
+          # Take screenshot
+          scrot /tmp/qr-login.png
+          
+          # Wait a bit more in case user scans quickly
+          sleep 30
+          
+          # Try to save cookies if login succeeded
+          cp cookies.json /tmp/cookies.json 2>/dev/null || true
+          
+          # Kill the login process
+          kill $LOGIN_PID 2>/dev/null || true
+        continue-on-error: true
+      
+      - name: Upload QR screenshot and cookies
+        uses: actions/upload-artifact@v4
+        with:
+          name: login-qr-code
+          path: |
+            /tmp/qr-login.png
+            /tmp/cookies.json
+          retention-days: 5
+      
+      - name: Comment with artifact link
+        run: |
+          echo "✅ QR code generated! Check the artifact 'login-qr-code' for the screenshot."
+          echo "📱 Scan the QR code with your Xiaohongshu app within 5 minutes."
+          echo "🍪 After scanning, the cookies.json will be uploaded as well."
